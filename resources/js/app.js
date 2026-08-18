@@ -240,9 +240,51 @@ function buildTimeAxis() {
     return html;
 }
 
+function renderGapFiller(startM, endM) {
+    const gapStartM = Math.max(0, Math.min(startM, 1440));
+    const gapEndM   = Math.max(0, Math.min(endM, 1440));
+    if (gapEndM <= gapStartM) return '';
+
+    const rawL  = gapStartM * PX_PER_MIN;
+    const rawW  = (gapEndM - gapStartM) * PX_PER_MIN;
+    const left  = Math.max(0, Math.min(rawL, GRID_W));
+    const width = Math.max(0, Math.min(rawW - CARD_GAP, GRID_W - left));
+
+    if (width <= 0) return '';
+
+    return `
+    <div style="position:absolute;top:5px;left:${left}px;width:${width}px;height:${ROW_H-10}px;
+                box-sizing:border-box;border-radius:6px;
+                background:repeating-linear-gradient(45deg, rgba(239,68,68,0.12), rgba(239,68,68,0.12) 6px, transparent 6px, transparent 12px);
+                border:1px dashed rgba(239,68,68,0.2);
+                display:flex;align-items:center;justify-content:center;
+                pointer-events:none;z-index:0;user-select:none;overflow:hidden;">
+        ${width > 40 ? '<span style="font-size:9px;font-weight:700;color:rgba(239,68,68,0.45);letter-spacing:.05em;pointer-events:none;white-space:nowrap;">NO DATA</span>' : ''}
+    </div>`;
+}
+
 function buildChannelRow(channel, programs, isExpanded, hoveredProgram) {
     const lane0 = programs.filter(p => (p.lane ?? 0) === 0);
+    const sorted = [...lane0].sort((a, b) => nptMinutes(a.start_time) - nptMinutes(b.start_time));
     let html = '';
+
+    // ── Render gap fillers for unscheduled time slots ──
+    let lastEndM = 0;
+    for (const p of sorted) {
+        const startM = nptMinutes(p.start_time);
+        if (startM > lastEndM) {
+            html += renderGapFiller(lastEndM, startM);
+        }
+        const pEndM = startM + (p.duration_minutes || 0);
+        if (pEndM > lastEndM) {
+            lastEndM = pEndM;
+        }
+    }
+    if (lastEndM < 1440) {
+        html += renderGapFiller(lastEndM, 1440);
+    }
+
+    // ── Render program cards ──
     for (const p of lane0) {
         const startM  = nptMinutes(p.start_time);
         const rawL    = startM * PX_PER_MIN;
@@ -397,82 +439,95 @@ function renderEPG() {
                 // Keep panel within the 4320px grid bounds
                 const clampLeft = Math.max(10, Math.min(rawLeft, GRID_W - panelW - 10));
                 return `
-                <div style="position:absolute;top:${ROW_H + 5}px;left:${clampLeft}px;width:${panelW}px;height:160px;padding:14px 20px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between;border:1px solid ${accent}40;border-radius:10px;background:rgba(18,18,32,0.95);backdrop-filter:blur(12px);z-index:30;box-shadow:0 12px 30px rgba(0,0,0,0.6);">
-                    <div>
-                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
-                            <span style="font-size:13px;font-weight:800;color:#f1f5f9;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;">${hoveredProgram.title}</span>
-                            ${tags.map(t => `<span style="padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;color:#94a3b8;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);">${t}</span>`).join('')}
+                <div style="position:absolute;top:${ROW_H + 5}px;left:${clampLeft}px;width:${panelW}px;height:160px;padding:14px 20px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between;border:1px solid ${accent}40;border-radius:10px;background:rgba(18,18,32,0.95);backdrop-filter:blur(12px);z-index:30;box-shadow:0 12px 30px rgba(0,0,0,0.6);overflow:hidden;">
+                    <!-- Background Looping Video -->
+                    <video autoplay loop muted playsinline
+                           style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;pointer-events:none;"
+                           onerror="this.style.display='none';">
+                        <source src="/storage/short.mp4" type="video/mp4">
+                    </video>
+
+                    <!-- Dark Overlay for Readability -->
+                    <div style="position:absolute;inset:0;background:rgba(12,12,24,0.68);z-index:1;pointer-events:none;"></div>
+
+                    <!-- Card Content Layer -->
+                    <div style="position:relative;z-index:2;display:flex;flex-direction:column;justify-content:space-between;height:100%;width:100%;">
+                        <div>
+                            <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+                                <span style="font-size:13px;font-weight:800;color:#f1f5f9;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;">${hoveredProgram.title}</span>
+                                ${tags.map(t => `<span style="padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;color:#94a3b8;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);">${t}</span>`).join('')}
+                            </div>
+
+                            <div style="display:flex;align-items:center;gap:12px;font-size:10px;color:#818cf8;font-weight:700;margin-bottom:8px;">
+                                <span><i class="fa-regular fa-clock" style="margin-right:4px;"></i>${fmtNPT(hoveredProgram.start_time)} — ${fmtNPT(hoveredProgram.end_time)}</span>
+                                <span>•</span>
+                                <span>${hoveredProgram.duration_minutes} min</span>
+                            </div>
+
+                            ${hoveredProgram.description ? `
+                            <p style="font-size:10.5px;color:#94a3b8;line-height:1.5;margin:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">
+                                ${hoveredProgram.description}
+                            </p>
+                            ` : ''}
                         </div>
 
-                        <div style="display:flex;align-items:center;gap:12px;font-size:10px;color:#818cf8;font-weight:700;margin-bottom:8px;">
-                            <span><i class="fa-regular fa-clock" style="margin-right:4px;"></i>${fmtNPT(hoveredProgram.start_time)} — ${fmtNPT(hoveredProgram.end_time)}</span>
-                            <span>•</span>
-                            <span>${hoveredProgram.duration_minutes} min</span>
-                        </div>
-
-                        ${hoveredProgram.description ? `
-                        <p style="font-size:10.5px;color:#94a3b8;line-height:1.5;margin:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">
-                            ${hoveredProgram.description}
-                        </p>
-                        ` : ''}
-                    </div>
-
-                    ${(() => {
-                        const pSt = programState(hoveredProgram);
-                        // ── PAST (RECORDED) ─────────────────────────────────
-                        if (pSt === 'past') {
+                        ${(() => {
+                            const pSt = programState(hoveredProgram);
+                            // ── PAST (RECORDED) ─────────────────────────────────
+                            if (pSt === 'past') {
+                                return `
+                                <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
+                                    <span style="font-size:10px;font-weight:700;color:#64748b;display:inline-flex;align-items:center;gap:5px;">
+                                        ● RECORDED
+                                    </span>
+                                    <div style="display:flex;align-items:center;gap:8px;">
+                                        <a href="#/recorded/${hoveredProgram.id}" style="padding:6px 14px;border-radius:6px;border:none;background:#334155;color:#e2e8f0;font-size:10px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none;">
+                                            <i class="fa-solid fa-play"></i> Play Recording
+                                        </a>
+                                    </div>
+                                </div>`;
+                            }
+                            // ── LIVE ────────────────────────────────────────────
+                            if (pSt === 'live') {
+                                return `
+                                <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
+                                    <span style="font-size:10px;font-weight:800;color:#ef4444;display:inline-flex;align-items:center;gap:5px;">
+                                        <span style="width:7px;height:7px;border-radius:50%;background:#ef4444;display:inline-block;box-shadow:0 0 6px #ef4444;"></span> LIVE NOW
+                                    </span>
+                                    <div>
+                                        <a href="#/live/${ch.slug}" style="padding:6px 14px;border-radius:6px;border:none;background:#ef4444;color:#ffffff;font-size:10px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none;box-shadow:0 4px 12px rgba(239,68,68,0.4);">
+                                            <i class="fa-solid fa-play"></i> Watch Live
+                                        </a>
+                                    </div>
+                                </div>`;
+                            }
+                            // ── UPCOMING ────────────────────────────────────────
                             return `
                             <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
-                                <span style="font-size:10px;font-weight:700;color:#64748b;display:inline-flex;align-items:center;gap:5px;">
-                                    ● RECORDED
-                                </span>
-                                <div style="display:flex;align-items:center;gap:8px;">
-                                    <a href="#/recorded/${hoveredProgram.id}" style="padding:6px 14px;border-radius:6px;border:none;background:#334155;color:#e2e8f0;font-size:10px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none;">
-                                        <i class="fa-solid fa-play"></i> Play Recording
-                                    </a>
-                                </div>
-                            </div>`;
-                        }
-                        // ── LIVE ────────────────────────────────────────────
-                        if (pSt === 'live') {
-                            return `
-                            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
-                                <span style="font-size:10px;font-weight:800;color:#ef4444;display:inline-flex;align-items:center;gap:5px;">
-                                    <span style="width:7px;height:7px;border-radius:50%;background:#ef4444;display:inline-block;box-shadow:0 0 6px #ef4444;"></span> LIVE NOW
-                                </span>
                                 <div>
-                                    <a href="#/live/${ch.slug}" style="padding:6px 14px;border-radius:6px;border:none;background:#ef4444;color:#ffffff;font-size:10px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none;box-shadow:0 4px 12px rgba(239,68,68,0.4);">
-                                        <i class="fa-solid fa-play"></i> Watch Live
-                                    </a>
+                                    ${hasReminder ? `
+                                    <span style="font-size:10px;color:#10b981;font-weight:700;display:inline-flex;align-items:center;gap:5px;">
+                                        <i class="fa-solid fa-bell"></i> Reminder set (${hasReminder.minutes_before}m before)
+                                    </span>
+                                    ` : `
+                                    <span style="font-size:10px;font-weight:700;color:#818cf8;display:inline-flex;align-items:center;gap:5px;">
+                                        🕐 Upcoming
+                                    </span>
+                                    `}
+                                </div>
+                                <div style="display:flex;align-items:center;gap:8px;">
+                                    ${hasReminder ? `
+                                    <button onclick="cancelReminder(${hasReminder.id})" style="padding:5px 10px;border-radius:6px;border:1px solid rgba(239,68,68,0.2);background:rgba(239,68,68,0.1);color:#f87171;font-size:10px;font-weight:700;cursor:pointer;">Cancel Alert</button>
+                                    <button onclick="openReminderModal(${hoveredProgram.id})" style="padding:5px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#cbd5e1;font-size:10px;font-weight:700;cursor:pointer;">Modify Alert</button>
+                                    ` : `
+                                    <button onclick="openReminderModal(${hoveredProgram.id})" style="padding:6px 14px;border-radius:6px;border:none;background:${accent};color:#ffffff;font-size:10px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;box-shadow:0 4px 12px ${accent}40;">
+                                        <i class="fa-solid fa-bell"></i> Set Reminder
+                                    </button>
+                                    `}
                                 </div>
                             </div>`;
-                        }
-                        // ── UPCOMING ────────────────────────────────────────
-                        return `
-                        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
-                            <div>
-                                ${hasReminder ? `
-                                <span style="font-size:10px;color:#10b981;font-weight:700;display:inline-flex;align-items:center;gap:5px;">
-                                    <i class="fa-solid fa-bell"></i> Reminder set (${hasReminder.minutes_before}m before)
-                                </span>
-                                ` : `
-                                <span style="font-size:10px;font-weight:700;color:#818cf8;display:inline-flex;align-items:center;gap:5px;">
-                                    🕐 Upcoming
-                                </span>
-                                `}
-                            </div>
-                            <div style="display:flex;align-items:center;gap:8px;">
-                                ${hasReminder ? `
-                                <button onclick="cancelReminder(${hasReminder.id})" style="padding:5px 10px;border-radius:6px;border:1px solid rgba(239,68,68,0.2);background:rgba(239,68,68,0.1);color:#f87171;font-size:10px;font-weight:700;cursor:pointer;">Cancel Alert</button>
-                                <button onclick="openReminderModal(${hoveredProgram.id})" style="padding:5px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#cbd5e1;font-size:10px;font-weight:700;cursor:pointer;">Modify Alert</button>
-                                ` : `
-                                <button onclick="openReminderModal(${hoveredProgram.id})" style="padding:6px 14px;border-radius:6px;border:none;background:${accent};color:#ffffff;font-size:10px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;box-shadow:0 4px 12px ${accent}40;">
-                                    <i class="fa-solid fa-bell"></i> Set Reminder
-                                </button>
-                                `}
-                            </div>
-                        </div>`;
-                    })()}
+                        })()}
+                    </div>
                 </div>
                 `;
             })()}
