@@ -7,7 +7,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Channel extends Model
 {
-    protected $fillable = ['slug', 'name', 'data_file', 'logo_color'];
+    protected $fillable = ['slug', 'name', 'data_file', 'logo_color', 'logo_url'];
+
 
     public function programs(): HasMany
     {

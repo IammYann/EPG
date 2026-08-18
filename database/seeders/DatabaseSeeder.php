@@ -31,6 +31,7 @@ class DatabaseSeeder extends Seeder
                 'name' => 'Kantipur',
                 'data_file' => 'kantipur.json',
                 'logo_color' => '#ef4444', // Red
+                'logo_url' => '/assets/kantipur.png',
             ]
         );
 
@@ -40,8 +41,11 @@ class DatabaseSeeder extends Seeder
                 'name' => 'Star Sports 1 HD',
                 'data_file' => 'Star sports 1 HD.json',
                 'logo_color' => '#0ea5e9', // Blue/Sky
+                'logo_url' => '/assets/starsports.png',
             ]
         );
+
+
 
         // Trigger EPG ingestion command automatically
         $this->command->call('epg:import');

@@ -14,6 +14,7 @@ return new class extends Migration
             $table->string('name');
             $table->string('data_file');
             $table->string('logo_color', 20)->default('#6366f1');
+            $table->string('logo_url')->nullable();
             $table->timestamps();
         });
     }
