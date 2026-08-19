@@ -16,6 +16,7 @@ class ChannelController extends Controller
                 'slug'       => $channel->slug,
                 'name'       => $channel->name,
                 'logo_color' => $channel->logo_color,
+                'logo_url'   => $channel->logo_url,
                 'dates'      => $epgService->availableDates($channel),
             ];
         });

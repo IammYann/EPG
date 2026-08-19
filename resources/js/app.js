@@ -45,12 +45,12 @@ function fmtNPT(isoOrDate) {
     let h = d.getUTCHours(), m = d.getUTCMinutes();
     const ampm = h >= 12 ? 'PM' : 'AM';
     h = h % 12 || 12;
-    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')} ${ampm}`;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
 function todayNPT() {
     const d = toNPT(new Date());
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 
 // ─── Toast ───────────────────────────────────────
@@ -61,17 +61,17 @@ function toast(msg, type = 'ok') {
     const ok = type === 'ok';
     el.className = 'flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-semibold shadow-2xl border backdrop-blur-md transition-all duration-300 opacity-0 translate-y-2 ' +
         (ok ? 'bg-slate-900/90 border-emerald-500/20 text-emerald-400'
-             : 'bg-slate-900/90 border-rose-500/20 text-rose-400');
+            : 'bg-slate-900/90 border-rose-500/20 text-rose-400');
     el.innerHTML = `<i class="fa-solid ${ok ? 'fa-circle-check' : 'fa-circle-exclamation'}"></i><span>${msg}</span>`;
     c.appendChild(el);
-    requestAnimationFrame(() => el.classList.remove('opacity-0','translate-y-2'));
-    setTimeout(() => { el.classList.add('opacity-0','translate-y-2'); setTimeout(() => el.remove(), 300); }, 3000);
+    requestAnimationFrame(() => el.classList.remove('opacity-0', 'translate-y-2'));
+    setTimeout(() => { el.classList.add('opacity-0', 'translate-y-2'); setTimeout(() => el.remove(), 300); }, 3000);
 }
 
 // ─── API ─────────────────────────────────────────
 async function apiGet(url) { return (await axios.get(url)).data; }
 
-async function loadUser()  { try { state.user = (await apiGet('/api/auth/me')).user; } catch { state.user = null; } }
+async function loadUser() { try { state.user = (await apiGet('/api/auth/me')).user; } catch { state.user = null; } }
 async function loadChannels() {
     const data = await apiGet('/api/channels');
     state.channels = data;
@@ -94,10 +94,10 @@ async function loadProgramsForDate(date) {
     results.forEach(r => { state.programsByChannel[r.slug] = r.programs; });
     state.loading = false;
 }
-async function loadReminders() { if (state.user) try { state.reminders = await apiGet('/api/reminders'); } catch {} }
+async function loadReminders() { if (state.user) try { state.reminders = await apiGet('/api/reminders'); } catch { } }
 async function loadNotifications() {
     if (!state.user) return;
-    try { const d = await apiGet('/api/notifications'); state.notifications = d.notifications; state.unreadCount = d.unread_count; } catch {}
+    try { const d = await apiGet('/api/notifications'); state.notifications = d.notifications; state.unreadCount = d.unread_count; } catch { }
 }
 
 // ─── Router ──────────────────────────────────────
@@ -186,8 +186,8 @@ function renderHeader() {
                         ${state.unreadCount ? `<button onclick="markAllRead()" class="text-[10px] text-[var(--color-secondary)] font-bold hover:underline">Mark all read</button>` : ''}
                     </div>
                     ${state.notifications.length === 0
-                        ? `<div class="px-4 py-8 text-center text-[11px] text-slate-400">No notifications yet</div>`
-                        : state.notifications.map(n => `
+            ? `<div class="px-4 py-8 text-center text-[11px] text-slate-400">No notifications yet</div>`
+            : state.notifications.map(n => `
                             <div class="px-4 py-3 border-b border-white/5 hover:bg-white/5 relative ${!n.read_at ? 'bg-white/5' : ''}">
                                 <div class="text-[11px] font-bold text-white pr-5">${n.title}</div>
                                 <div class="text-[10px] text-slate-400 mt-0.5 leading-relaxed">${n.body}</div>
@@ -207,11 +207,16 @@ function renderHeader() {
 }
 
 // ─── EPG TIMELINE ────────────────────────────────
-const PX_PER_MIN  = 3;    // 3px per minute → 4320px for 24h (sharper resolution)
-const GRID_W      = 4320; // 24h × 60min × 3px
-const LABEL_W     = 140;  // px for the left sticky channel label column
-const HEADER_H    = 36;   // px for time axis header
-const CARD_GAP    = 2;    // px gap between adjacent cards
+const PX_PER_MIN = 3;    // 3px per minute → 4320px for 24h (sharper resolution)
+const GRID_W = 4320; // 24h × 60min × 3px
+const LABEL_W = 140;  // px for the left sticky channel label column
+const HEADER_H = 36;   // px for time axis header
+const CARD_GAP = 2;    // px gap between adjacent cards
+const HOVER_POPOUT_DELAY_MS = 600; // 600ms delay before hover popout appears
+const HOVER_HIDE_GRACE_MS  = 120; // 120ms grace period to move cursor into popout card
+let hoverPopoutTimer = null;
+let popoutHideTimer  = null;
+let isOverPopout     = false;
 
 // ─── Centralized Program Background Video Mapping ───
 const PROGRAM_VIDEO_MAP = {
@@ -247,8 +252,8 @@ function getTargetRowH() {
 function programState(p) {
     const now = Date.now();
     const start = new Date(p.start_time).getTime();
-    const end   = new Date(p.end_time).getTime();
-    if (now >= end)   return 'past';
+    const end = new Date(p.end_time).getTime();
+    if (now >= end) return 'past';
     if (now >= start) return 'live';
     return 'upcoming';
 }
@@ -259,9 +264,9 @@ function watchLive(slug) { location.hash = `#/live/${slug}`; }
 function buildTimeAxis() {
     let html = '';
     for (let h = 0; h <= 24; h++) {
-        const label = h === 24 ? '' : `${String(h).padStart(2,'0')}:00`;
+        const label = h === 24 ? '' : `${String(h).padStart(2, '0')}:00`;
         const x = h * 60 * PX_PER_MIN;
-        html += `<div style="position:absolute;left:${x}px;top:0;width:${60*PX_PER_MIN}px;height:${HEADER_H}px;
+        html += `<div style="position:absolute;left:${x}px;top:0;width:${60 * PX_PER_MIN}px;height:${HEADER_H}px;
                       border-left:1px solid rgba(255,255,255,0.05);box-sizing:border-box;">
                     <span style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.5);padding-left:4px;padding-top:8px;display:block;letter-spacing:.5px;">${label}</span>
                 </div>`;
@@ -271,18 +276,18 @@ function buildTimeAxis() {
 
 function renderGapFiller(startM, endM, rowH = getTargetRowH()) {
     const gapStartM = Math.max(0, Math.min(startM, 1440));
-    const gapEndM   = Math.max(0, Math.min(endM, 1440));
+    const gapEndM = Math.max(0, Math.min(endM, 1440));
     if (gapEndM <= gapStartM) return '';
 
-    const rawL  = gapStartM * PX_PER_MIN;
-    const rawW  = (gapEndM - gapStartM) * PX_PER_MIN;
-    const left  = Math.max(0, Math.min(rawL, GRID_W));
+    const rawL = gapStartM * PX_PER_MIN;
+    const rawW = (gapEndM - gapStartM) * PX_PER_MIN;
+    const left = Math.max(0, Math.min(rawL, GRID_W));
     const width = Math.max(0, Math.min(rawW - CARD_GAP, GRID_W - left));
 
     if (width <= 0) return '';
 
     return `
-    <div style="position:absolute;top:3px;left:${left}px;width:${width}px;height:${rowH-6}px;
+    <div style="position:absolute;top:3px;left:${left}px;width:${width}px;height:${rowH - 6}px;
                 box-sizing:border-box;border-radius:6px;
                 background:repeating-linear-gradient(45deg, rgba(239,68,68,0.12), rgba(239,68,68,0.12) 6px, transparent 6px, transparent 12px);
                 border:1px dashed rgba(239,68,68,0.2);
@@ -315,34 +320,35 @@ function buildChannelRow(channel, programs, isExpanded, hoveredProgram, rowH = g
 
     // ── Render program cards ──
     for (const p of lane0) {
-        const startM  = nptMinutes(p.start_time);
-        const rawL    = startM * PX_PER_MIN;
-        const rawW    = p.duration_minutes * PX_PER_MIN;
-        const left    = Math.max(0, Math.min(rawL, GRID_W));
-        const width   = Math.max(3, Math.min(rawW - CARD_GAP, GRID_W - left));
+        const startM = nptMinutes(p.start_time);
+        const rawL = startM * PX_PER_MIN;
+        const rawW = p.duration_minutes * PX_PER_MIN;
+        const left = Math.max(0, Math.min(rawL, GRID_W));
+        const width = Math.max(3, Math.min(rawW - CARD_GAP, GRID_W - left));
 
-        const pState  = programState(p);
-        const isNow   = pState === 'live';
-        const isPast  = pState === 'past';
-        const hasRem  = !!p.reminder;
+        const pState = programState(p);
+        const isNow = pState === 'live';
+        const isPast = pState === 'past';
+        const hasRem = !!p.reminder;
         const isHovered = isExpanded && hoveredProgram?.id === p.id;
-        const accent    = channel.logo_color || 'var(--color-primary)';
+        const accent = channel.logo_color || 'var(--color-primary)';
 
-        let cardBg     = 'var(--color-surface)';
+        let cardBg = 'var(--color-surface)';
         let cardBorder = 'var(--color-border)';
-        if (isHovered)  { cardBg = 'var(--color-surface-hover)'; cardBorder = 'var(--color-primary)'; }
+        if (isHovered) { cardBg = 'var(--color-surface-hover)'; cardBorder = 'var(--color-primary)'; }
         else if (isNow) { cardBg = 'rgba(0,102,179,0.2)'; cardBorder = 'var(--color-primary)'; }
-        else if (isPast){ cardBg = 'rgba(25,25,25,0.6)';  cardBorder = 'rgba(255,255,255,0.03)'; }
+        else if (isPast) { cardBg = 'rgba(25,25,25,0.6)'; cardBorder = 'rgba(255,255,255,0.03)'; }
 
         let statusBadge = '';
-        if (isNow)  statusBadge = '<span style="font-size:8px;font-weight:800;color:#ef4444;letter-spacing:.04em;">● LIVE</span>';
+        if (isNow) statusBadge = '<span style="font-size:8px;font-weight:800;color:#ef4444;letter-spacing:.04em;">● LIVE</span>';
         else if (isPast) statusBadge = '<span style="font-size:8px;font-weight:800;color:var(--color-secondary);letter-spacing:.03em;">● REC</span>';
         else if (hasRem) statusBadge = '<i class="fa-solid fa-bell" style="font-size:8px;color:var(--color-secondary);"></i>';
 
         html += `
         <div onclick="openDetail(${p.id})"
              onmouseenter="handleProgramHover(${channel.id}, ${p.id})"
-             style="position:absolute;top:3px;left:${left}px;width:${width}px;height:${rowH-6}px;
+             onmouseleave="handleProgramLeave()"
+             style="position:absolute;top:3px;left:${left}px;width:${width}px;height:${rowH - 6}px;
                     box-sizing:border-box;cursor:pointer;overflow:hidden;border-radius:6px;
                     background:${cardBg};border:1px solid ${cardBorder};
                     transform:${isHovered ? 'scale(1.04)' : 'scale(1)'};
@@ -384,9 +390,9 @@ function renderEPG() {
         </button>
         <select id="date-sel" onchange="changeDate(this.value)" style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;color:#ffffff;cursor:pointer;outline:none;">
             ${allDates.map(d => {
-                const label = d === today ? 'Today' : new Date(d).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',timeZone:'UTC'});
-                return `<option value="${d}" ${state.currentDate===d?'selected':''}>${label}</option>`;
-            }).join('')}
+        const label = d === today ? 'Today' : new Date(d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+        return `<option value="${d}" ${state.currentDate === d ? 'selected' : ''}>${label}</option>`;
+    }).join('')}
         </select>
         <button onclick="shiftDate(1)" style="width:32px;height:32px;border-radius:8px;border:1px solid var(--color-border);background:var(--color-surface);color:rgba(255,255,255,0.7);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:10px;" onmouseenter="this.style.borderColor='var(--color-primary)';this.style.color='#fff'" onmouseleave="this.style.borderColor='var(--color-border)';this.style.color='rgba(255,255,255,0.7)'">
             <i class="fa-solid fa-chevron-right"></i>
@@ -415,12 +421,7 @@ function renderEPG() {
         const tags = hoveredProgram ? [hoveredProgram.genre, hoveredProgram.language, hoveredProgram.programme_type, hoveredProgram.season ? `S${hoveredProgram.season}` : null, hoveredProgram.episode ? `E${hoveredProgram.episode}` : null].filter(Boolean) : [];
         const hasReminder = hoveredProgram?.reminder;
 
-        const logoSrc = ch.logo_url || 
-            ((ch.slug.includes('sky') || ch.name.toLowerCase().includes('sky')) 
-                ? '/assets/skysports.png' 
-                : ((ch.slug.includes('star') || ch.name.toLowerCase().includes('star') || ch.name.toLowerCase().includes('sport'))
-                    ? '/assets/starsports.png' 
-                    : '/assets/kantipur.png'));
+        const logoSrc = ch.logo_url || '/assets/kantipur.png';
 
         channelLabelsHtml += `
         <div style="height:${rowHeight}px;transition:height 0.25s cubic-bezier(0.16, 1, 0.3, 1);display:flex;flex-direction:column;align-items:${isExpanded ? 'center' : 'stretch'};justify-content:space-between;padding:${isExpanded ? '14px 10px' : '4px 10px'};border-bottom:1px solid ${isExpanded ? 'var(--color-primary)' : 'var(--color-border)'};box-sizing:border-box;background:${isExpanded ? 'var(--color-surface)' : 'transparent'};overflow:hidden;">
@@ -467,13 +468,13 @@ function renderEPG() {
             <!-- Expanded Details Panel inside Channel Row -->
             ${isExpanded && hoveredProgram ? `
             ${(() => {
-                const startM = nptMinutes(hoveredProgram.start_time);
-                const rawLeft = startM * PX_PER_MIN;
-                const panelW = 420; // px width for details box
-                // Keep panel within the 4320px grid bounds
-                const clampLeft = Math.max(10, Math.min(rawLeft, GRID_W - panelW - 10));
-                return `
-                <div style="position:absolute;top:${rowH + 4}px;left:${clampLeft}px;width:${panelW}px;height:160px;padding:14px 20px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between;border:1px solid var(--color-primary);border-radius:10px;background:var(--color-surface);backdrop-filter:blur(12px);z-index:30;box-shadow:0 12px 30px rgba(0,0,0,0.8);overflow:hidden;">
+                    const startM = nptMinutes(hoveredProgram.start_time);
+                    const rawLeft = startM * PX_PER_MIN;
+                    const panelW = 420; // px width for details box
+                    // Keep panel within the 4320px grid bounds
+                    const clampLeft = Math.max(10, Math.min(rawLeft, GRID_W - panelW - 10));
+                    return `
+                <div onmouseenter="handlePopoutMouseEnter()" onmouseleave="handlePopoutMouseLeave()" style="position:absolute;top:${rowH + 4}px;left:${clampLeft}px;width:${panelW}px;height:160px;padding:14px 20px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between;border:1px solid var(--color-primary);border-radius:10px;background:var(--color-surface);backdrop-filter:blur(12px);z-index:30;box-shadow:0 12px 30px rgba(0,0,0,0.8);overflow:hidden;">
                     <!-- Background Looping Video -->
                     <video autoplay loop muted playsinline
                            style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;pointer-events:none;"
@@ -564,7 +565,7 @@ function renderEPG() {
                     </div>
                 </div>
                 `;
-            })()}
+                })()}
             ` : ''}
         </div>`;
     }
@@ -573,7 +574,7 @@ function renderEPG() {
     <div style="flex:1;display:flex;flex-direction:column;min-height:0;background:var(--color-bg);" onmouseleave="handleEpgLeave()">
         <!-- Toolbar -->
         <div style="padding:14px 20px;border-bottom:1px solid var(--color-border);display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--color-surface);flex-shrink:0;">
-            <div style="font-size:10px;font-weight:800;color:rgba(255,255,255,0.6);letter-spacing:.1em;text-transform:uppercase;">TV Guide — ${state.channels.map(c=>`<span style="color:${c.logo_color||'var(--color-primary)'}">${c.name}</span>`).join(' · ')}</div>
+            <div style="font-size:10px;font-weight:800;color:rgba(255,255,255,0.6);letter-spacing:.1em;text-transform:uppercase;">TV Guide — ${state.channels.map(c => `<span style="color:${c.logo_color || 'var(--color-primary)'}">${c.name}</span>`).join(' · ')}</div>
             ${dateSel}
         </div>
 
@@ -638,7 +639,7 @@ function renderReminders() {
                         <span style="font-size:9px;color:rgba(255,255,255,0.5);text-transform:capitalize;">${r.status}</span>
                     </div>
                     <div style="font-size:12px;font-weight:700;color:var(--color-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.programme_name}</div>
-                    <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-top:3px;">${new Date(r.programme_start_time).toLocaleString('en-US',{timeZone:'Asia/Kathmandu'})}</div>
+                    <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-top:3px;">${new Date(r.programme_start_time).toLocaleString('en-US', { timeZone: 'Asia/Kathmandu' })}</div>
                     <div style="font-size:10px;color:var(--color-secondary);margin-top:3px;"><i class="fa-solid fa-clock-rotate-left" style="margin-right:4px;"></i>${r.reminder_minutes_before} min before</div>
                 </div>
                 <div style="display:flex;gap:6px;flex-shrink:0;">
@@ -711,13 +712,13 @@ function renderLivePlayer() {
                 <div style="font-size:10px;font-weight:800;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;">Switch Channel</div>
                 <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(200px, 1fr));gap:12px;">
                     ${state.channels.map(c => `
-                    <a href="#/live/${c.slug}" style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:10px;background:${c.slug===ch.slug?'rgba(0,102,179,0.2)':'var(--color-surface)'};border:1px solid ${c.slug===ch.slug?'var(--color-primary)':'var(--color-border)'};text-decoration:none;transition:all .15s;" onmouseenter="this.style.borderColor='var(--color-primary)'" onmouseleave="this.style.borderColor='${c.slug===ch.slug?'var(--color-primary)':'var(--color-border)'}'">
+                    <a href="#/live/${c.slug}" style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:10px;background:${c.slug === ch.slug ? 'rgba(0,102,179,0.2)' : 'var(--color-surface)'};border:1px solid ${c.slug === ch.slug ? 'var(--color-primary)' : 'var(--color-border)'};text-decoration:none;transition:all .15s;" onmouseenter="this.style.borderColor='var(--color-primary)'" onmouseleave="this.style.borderColor='${c.slug === ch.slug ? 'var(--color-primary)' : 'var(--color-border)'}'">
                         <span style="width:10px;height:10px;border-radius:50%;background:${c.logo_color}"></span>
                         <div style="flex:1;min-width:0;">
                             <div style="font-size:11px;font-weight:700;color:var(--color-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name}</div>
-                            <div style="font-size:9px;color:${c.slug===ch.slug?'var(--color-secondary)':'rgba(255,255,255,0.5)'};margin-top:2px;">${c.slug===ch.slug?'Currently Playing':'Tap to Watch'}</div>
+                            <div style="font-size:9px;color:${c.slug === ch.slug ? 'var(--color-secondary)' : 'rgba(255,255,255,0.5)'};margin-top:2px;">${c.slug === ch.slug ? 'Currently Playing' : 'Tap to Watch'}</div>
                         </div>
-                        <i class="fa-solid fa-circle-play" style="color:${c.slug===ch.slug?'var(--color-secondary)':'rgba(255,255,255,0.4)'};font-size:14px;"></i>
+                        <i class="fa-solid fa-circle-play" style="color:${c.slug === ch.slug ? 'var(--color-secondary)' : 'rgba(255,255,255,0.4)'};font-size:14px;"></i>
                     </a>`).join('')}
                 </div>
             </div>
@@ -752,7 +753,7 @@ function renderDetailModal() {
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px 0;border-top:1px solid var(--color-border);border-bottom:1px solid var(--color-border);margin-bottom:12px;">
                     <div>
                         <div style="font-size:9px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Date</div>
-                        <div style="font-size:11px;font-weight:600;color:var(--color-text-primary);">${new Date(p.start_time).toLocaleDateString('en-US',{timeZone:'Asia/Kathmandu',weekday:'short',month:'short',day:'numeric'})}</div>
+                        <div style="font-size:11px;font-weight:600;color:var(--color-text-primary);">${new Date(p.start_time).toLocaleDateString('en-US', { timeZone: 'Asia/Kathmandu', weekday: 'short', month: 'short', day: 'numeric' })}</div>
                     </div>
                     <div>
                         <div style="font-size:9px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Time (NPT)</div>
@@ -770,25 +771,25 @@ function renderDetailModal() {
                 ${p.description ? `<p style="font-size:11px;color:rgba(255,255,255,0.7);line-height:1.6;margin-bottom:12px;">${p.description}</p>` : ''}
                 <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;">
                     ${(() => {
-                        const mSt = programState(p);
-                        if (mSt === 'past') {
-                            return `
+            const mSt = programState(p);
+            if (mSt === 'past') {
+                return `
                             <span style="font-size:10px;font-weight:800;color:var(--color-secondary);flex:1;">● RECORDED</span>
                             <a href="#/recorded/${p.id}" onclick="closeDetail()" style="padding:8px 16px;border-radius:8px;border:none;background:var(--color-primary);color:#ffffff;font-size:11px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none;">
                                 <i class="fa-solid fa-play"></i> Play Recording
                             </a>`;
-                        }
-                        if (mSt === 'live') {
-                            return `
+            }
+            if (mSt === 'live') {
+                return `
                             <span style="font-size:10px;font-weight:800;color:#ef4444;flex:1;display:inline-flex;align-items:center;gap:5px;">
                                 <span style="width:7px;height:7px;border-radius:50%;background:#ef4444;box-shadow:0 0 6px #ef4444;display:inline-block;"></span> LIVE NOW
                             </span>
                             <a href="#/live/${p.channel_slug || ''}" onclick="closeDetail()" style="padding:8px 16px;border-radius:8px;border:none;background:#ef4444;color:#fff;font-size:11px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none;box-shadow:0 4px 12px rgba(239,68,68,0.4);">
                                 <i class="fa-solid fa-play"></i> Watch Live
                             </a>`;
-                        }
-                        // Upcoming
-                        return p.reminder ? `
+            }
+            // Upcoming
+            return p.reminder ? `
                             <span style="font-size:11px;color:var(--color-secondary);font-weight:600;flex:1;"><i class="fa-solid fa-bell" style="margin-right:5px;"></i>Alert: ${p.reminder.minutes_before} min before</span>
                             <button onclick="cancelReminder(${p.reminder.id})" style="padding:7px 12px;border-radius:8px;border:1px solid rgba(239,68,68,.3);background:rgba(239,68,68,.1);color:#f87171;font-size:10px;font-weight:700;cursor:pointer;">Remove</button>
                             <button onclick="openReminderModal(${p.id})" style="padding:7px 12px;border-radius:8px;border:1px solid var(--color-border);background:var(--color-bg);color:var(--color-text-primary);font-size:10px;font-weight:700;cursor:pointer;">Modify</button>
@@ -796,7 +797,7 @@ function renderDetailModal() {
                             <button onclick="openReminderModal(${p.id})" style="padding:8px 16px;border-radius:8px;border:none;background:var(--color-primary);color:#fff;font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;">
                                 <i class="fa-solid fa-bell"></i> Set Reminder
                             </button>`;
-                    })()}
+        })()}
                 </div>
             </div>
         </div>
@@ -807,7 +808,7 @@ function renderDetailModal() {
 function renderReminderModal() {
     if (!state.reminderTarget) return '';
     const p = state.reminderTarget;
-    const opts = [{v:0,l:'At start time'},{v:5,l:'5 min before'},{v:15,l:'15 min before'},{v:30,l:'30 min before'},{v:60,l:'1 hour before'}];
+    const opts = [{ v: 0, l: 'At start time' }, { v: 5, l: '5 min before' }, { v: 15, l: '15 min before' }, { v: 30, l: '30 min before' }, { v: 60, l: '1 hour before' }];
     return `
     <div onclick="if(event.target===this)closeReminderModal()" style="position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:16px;">
         <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:16px;width:100%;max-width:340px;overflow:hidden;box-shadow:0 25px 60px rgba(0,0,0,.8);">
@@ -821,9 +822,9 @@ function renderReminderModal() {
                     <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-top:2px;">Starts ${fmtNPT(p.start_time)}</div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">
-                    ${opts.map((o,i) => `
+                    ${opts.map((o, i) => `
                     <label style="display:flex;align-items:center;gap:7px;padding:9px 10px;border-radius:7px;background:var(--color-bg);border:1px solid var(--color-border);cursor:pointer;">
-                        <input type="radio" name="ropt" value="${o.v}" ${i===2?'checked':''} style="accent-color:var(--color-primary);">
+                        <input type="radio" name="ropt" value="${o.v}" ${i === 2 ? 'checked' : ''} style="accent-color:var(--color-primary);">
                         <span style="font-size:10px;color:rgba(255,255,255,0.8);">${o.l}</span>
                     </label>`).join('')}
                     <label style="display:flex;align-items:center;gap:7px;padding:9px 10px;border-radius:7px;background:var(--color-bg);border:1px solid var(--color-border);cursor:pointer;" onclick="document.getElementById('custom-box').style.display='block'">
@@ -903,7 +904,7 @@ function renderLogin() {
     });
 }
 
-window.togglePw = function() {
+window.togglePw = function () {
     const pw = document.getElementById('pw');
     const ic = document.getElementById('pw-icon');
     if (!pw) return;
@@ -917,7 +918,7 @@ window.togglePw = function() {
 // To swap in a real recording later: set program.recording_url instead.
 const VIDEO_SOURCES = {
     recorded: '/storage/cricket.mp4',  // storage/app/public/cricket.mp4
-    live:     '/storage/football.mp4', // storage/app/public/football.mp4
+    live: '/storage/football.mp4', // storage/app/public/football.mp4
 };
 
 function renderRecordedPlayer() {
@@ -986,9 +987,9 @@ function renderRecordedPlayer() {
                 <!-- Channel Watermark -->
                 <div style="position:absolute;top:20px;left:20px;z-index:10;pointer-events:none;display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:8px;background:rgba(30,30,30,0.85);backdrop-filter:blur(8px);border:1px solid var(--color-border);">
                     ${logoSrc
-                        ? `<img src="${logoSrc}" alt="${channel.name}" style="height:16px;object-fit:contain;">`
-                        : `<span style="width:10px;height:10px;border-radius:50%;background:${accent};"></span>`
-                    }
+            ? `<img src="${logoSrc}" alt="${channel.name}" style="height:16px;object-fit:contain;">`
+            : `<span style="width:10px;height:10px;border-radius:50%;background:${accent};"></span>`
+        }
                     <span style="font-size:11px;font-weight:800;color:#fff;letter-spacing:.05em;">${channel?.name || ''}</span>
                 </div>
             </div>
@@ -1028,7 +1029,11 @@ function renderApp() {
     const hash = location.hash || '#/epg';
     const isEPG = hash === '#/epg';
     const isLive = hash.startsWith('#/live/');
-    const isRecorded = hash.startsWith('#/recorded/');
+    if (!isEPG) {
+        if (hoverPopoutTimer) { clearTimeout(hoverPopoutTimer); hoverPopoutTimer = null; }
+        state.activeHoverChannelId = null;
+        state.activeHoverProgramId = null;
+    }
 
     // Capture current timeline horizontal scroll position before re-rendering DOM
     const oldScroll = document.getElementById('timeline-scroll')?.scrollLeft;
@@ -1057,13 +1062,13 @@ function renderApp() {
                 sc.scrollLeft = oldScroll;
             } else if (!state.epgInitialScrollDone && state.currentDate === todayNPT()) {
                 // First EPG mount for today: scroll so the NOW line is ~50% across the viewport
-                const nowPx         = nptMinutes(new Date()) * PX_PER_MIN;
-                const viewportW     = sc.clientWidth || sc.offsetWidth || 800;
-                const target        = Math.max(0, Math.min(nowPx - viewportW * 0.50, GRID_W - viewportW));
+                const nowPx = nptMinutes(new Date()) * PX_PER_MIN;
+                const viewportW = sc.clientWidth || sc.offsetWidth || 800;
+                const target = Math.max(0, Math.min(nowPx - viewportW * 0.50, GRID_W - viewportW));
                 // Small RAF delay to ensure the container has its real dimensions
                 requestAnimationFrame(() => {
-                    const vw   = sc.clientWidth || sc.offsetWidth || 800;
-                    const tgt  = Math.max(0, Math.min(nowPx - vw * 0.50, GRID_W - vw));
+                    const vw = sc.clientWidth || sc.offsetWidth || 800;
+                    const tgt = Math.max(0, Math.min(nowPx - vw * 0.50, GRID_W - vw));
                     sc.scrollTo({ left: tgt, behavior: 'smooth' });
                 });
                 sc.scrollLeft = target; // instant fallback in same frame
@@ -1073,7 +1078,7 @@ function renderApp() {
     }
 
     document.getElementById('logout-btn')?.addEventListener('click', async () => {
-        try { await axios.post('/api/auth/logout'); state.user = null; location.hash = '#/login'; } catch {}
+        try { await axios.post('/api/auth/logout'); state.user = null; location.hash = '#/login'; } catch { }
     });
     document.getElementById('mark-all-read-btn')?.addEventListener('click', () => markAllRead());
 
@@ -1082,43 +1087,107 @@ function renderApp() {
 
 
 // ─── Hover Interaction Handlers ─────────────────
-window.handleProgramHover = function(channelId, programId) {
+window.handleProgramHover = function (channelId, programId) {
     if (state.activeHoverChannelId === channelId && state.activeHoverProgramId === programId) {
+        if (popoutHideTimer) {
+            clearTimeout(popoutHideTimer);
+            popoutHideTimer = null;
+        }
         return;
     }
-    state.activeHoverChannelId = channelId;
-    state.activeHoverProgramId = programId;
-    renderApp();
+
+    // Cancel any pending timers for a previously hovered program
+    if (hoverPopoutTimer) { clearTimeout(hoverPopoutTimer); hoverPopoutTimer = null; }
+    if (popoutHideTimer)  { clearTimeout(popoutHideTimer);  popoutHideTimer  = null; }
+
+    // Instantly close any open popout when moving to a different program
+    if (state.activeHoverChannelId !== null || state.activeHoverProgramId !== null) {
+        state.activeHoverChannelId = null;
+        state.activeHoverProgramId = null;
+        isOverPopout = false;
+        renderApp();
+    }
+
+    // Start 600ms hover delay timer
+    hoverPopoutTimer = setTimeout(() => {
+        state.activeHoverChannelId = channelId;
+        state.activeHoverProgramId = programId;
+        hoverPopoutTimer = null;
+        renderApp();
+    }, HOVER_POPOUT_DELAY_MS);
 };
 
-window.handleEpgLeave = function() {
-    if (state.activeHoverChannelId === null && state.activeHoverProgramId === null) {
-        return;
+window.handleProgramLeave = function () {
+    if (hoverPopoutTimer) {
+        clearTimeout(hoverPopoutTimer);
+        hoverPopoutTimer = null;
     }
-    state.activeHoverChannelId = null;
-    state.activeHoverProgramId = null;
-    renderApp();
+    if (state.activeHoverChannelId !== null || state.activeHoverProgramId !== null) {
+        if (popoutHideTimer) clearTimeout(popoutHideTimer);
+        popoutHideTimer = setTimeout(() => {
+            if (!isOverPopout) {
+                state.activeHoverChannelId = null;
+                state.activeHoverProgramId = null;
+                renderApp();
+            }
+            popoutHideTimer = null;
+        }, HOVER_HIDE_GRACE_MS);
+    }
+};
+
+window.handlePopoutMouseEnter = function () {
+    isOverPopout = true;
+    if (popoutHideTimer) {
+        clearTimeout(popoutHideTimer);
+        popoutHideTimer = null;
+    }
+};
+
+window.handlePopoutMouseLeave = function () {
+    isOverPopout = false;
+    if (state.activeHoverChannelId !== null || state.activeHoverProgramId !== null) {
+        if (popoutHideTimer) clearTimeout(popoutHideTimer);
+        popoutHideTimer = setTimeout(() => {
+            if (!isOverPopout) {
+                state.activeHoverChannelId = null;
+                state.activeHoverProgramId = null;
+                renderApp();
+            }
+            popoutHideTimer = null;
+        }, HOVER_HIDE_GRACE_MS);
+    }
+};
+
+window.handleEpgLeave = function () {
+    if (hoverPopoutTimer) { clearTimeout(hoverPopoutTimer); hoverPopoutTimer = null; }
+    if (popoutHideTimer)  { clearTimeout(popoutHideTimer);  popoutHideTimer  = null; }
+    isOverPopout = false;
+    if (state.activeHoverChannelId !== null || state.activeHoverProgramId !== null) {
+        state.activeHoverChannelId = null;
+        state.activeHoverProgramId = null;
+        renderApp();
+    }
 };
 
 
 // ─── Actions ─────────────────────────────────────
-window.changeDate = function(d) {
+window.changeDate = function (d) {
     state.currentDate = d;
     state.epgInitialScrollDone = false; // re-center if switching back to today
     loadProgramsForDate(d).then(renderApp);
 };
-window.shiftDate  = function(dir) {
-    const all = [...new Set(state.channels.flatMap(c => c.dates||[]))].sort();
-    const i   = all.indexOf(state.currentDate);
+window.shiftDate = function (dir) {
+    const all = [...new Set(state.channels.flatMap(c => c.dates || []))].sort();
+    const i = all.indexOf(state.currentDate);
     if (i === -1) return;
-    const ni  = i + dir;
+    const ni = i + dir;
     if (ni >= 0 && ni < all.length) {
         state.currentDate = all[ni];
         state.epgInitialScrollDone = false; // re-center if switching back to today
         loadProgramsForDate(all[ni]).then(renderApp);
     }
 };
-window.goToNow = function() {
+window.goToNow = function () {
     const today = todayNPT();
     if (state.currentDate !== today) {
         state.currentDate = today;
@@ -1140,7 +1209,7 @@ window.goToNow = function() {
 };
 
 
-window.openDetail = async function(id) {
+window.openDetail = async function (id) {
     try {
         const r = await apiGet(`/api/programs/${id}`);
         state.activeProgram = r.program;
@@ -1148,9 +1217,9 @@ window.openDetail = async function(id) {
         renderApp();
     } catch { toast('Could not load program details', 'err'); }
 };
-window.closeDetail = function() { state.activeProgram = null; renderApp(); };
+window.closeDetail = function () { state.activeProgram = null; renderApp(); };
 
-window.openReminderModal = async function(programId) {
+window.openReminderModal = async function (programId) {
     // Find program from state or fetch it
     let p = null;
     for (const progs of Object.values(state.programsByChannel)) {
@@ -1164,9 +1233,9 @@ window.openReminderModal = async function(programId) {
     state.reminderTarget = p;
     renderApp();
 };
-window.closeReminderModal = function() { state.reminderTarget = null; renderApp(); };
+window.closeReminderModal = function () { state.reminderTarget = null; renderApp(); };
 
-window.saveReminder = async function(programId) {
+window.saveReminder = async function (programId) {
     const sel = document.querySelector('input[name="ropt"]:checked');
     let minutes = sel ? sel.value : '15';
     if (minutes === 'custom') {
@@ -1183,7 +1252,7 @@ window.saveReminder = async function(programId) {
     } catch (e) { toast(e.response?.data?.message || 'Could not save reminder', 'err'); }
 };
 
-window.cancelReminder = async function(id) {
+window.cancelReminder = async function (id) {
     try {
         await axios.delete(`/api/reminders/${id}`);
         toast('Reminder removed');
@@ -1194,11 +1263,11 @@ window.cancelReminder = async function(id) {
     } catch { toast('Could not remove reminder', 'err'); }
 };
 
-window.markRead = async function(id) {
-    try { await axios.patch(`/api/notifications/${id}/read`); await loadNotifications(); renderApp(); } catch {}
+window.markRead = async function (id) {
+    try { await axios.patch(`/api/notifications/${id}/read`); await loadNotifications(); renderApp(); } catch { }
 };
-window.markAllRead = async function() {
-    try { await axios.patch('/api/notifications/read-all'); await loadNotifications(); renderApp(); } catch {}
+window.markAllRead = async function () {
+    try { await axios.patch('/api/notifications/read-all'); await loadNotifications(); renderApp(); } catch { }
 };
 
 function updateNowLine() {
@@ -1218,7 +1287,7 @@ setInterval(async () => {
     if (badge) badge.textContent = state.unreadCount;
 }, 15000);
 
-window.syncVerticalScroll = function(el) {
+window.syncVerticalScroll = function (el) {
     const container = document.getElementById('channel-labels-container');
     if (container) {
         container.style.transform = `translateY(-${el.scrollTop}px)`;

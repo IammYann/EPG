@@ -38,9 +38,8 @@ class EpgIngestionService
         }
 
         $programs = match ($channel->slug) {
-            'kantipur'         => (new KantipurAdapter())->parse($jsonPath),
-            'star-sports-1-hd' => (new StarSportsAdapter())->parse($jsonPath),
-            default            => throw new \RuntimeException("No adapter for channel: {$channel->slug}"),
+            'kantipur' => (new KantipurAdapter())->parse($jsonPath),
+            default    => (new StarSportsAdapter())->parse($jsonPath),
         };
 
         $inserted = 0;
@@ -58,7 +57,7 @@ class EpgIngestionService
                 $processed[$key] = true;
 
                 $exists = Program::where('channel_id', $channel->id)
-                    ->where('date', $p->date)
+                    ->whereDate('date', $p->date)
                     ->where('source_id', $p->sourceId)
                     ->where('lane', $p->lane)
                     ->first();
